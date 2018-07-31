@@ -1,0 +1,22 @@
+{
+    "name": "roygoldman/composer-installers-discovery",
+    "description": "A composer installers extension which permits dependencies to provide installer paths relative to the parent project.",
+    "type": "composer-plugin",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Rich Gerdes",
+            "email": "rich@richgerdes.com"
+        }
+    ],
+    "require": {
+        "jms/composer-deps-analyzer": "^1.0",
+        "composer/installers": "^1.5"
+    },
+    "autoload": {
+        "psr-4": {"RoyGoldman\\ComposerInstallersDiscovery\\": "src/"}
+    },
+    "extra": {
+        "class": "RoyGoldman\\ComposerInstallersDiscovery\\Plugin"
+    }
+}
