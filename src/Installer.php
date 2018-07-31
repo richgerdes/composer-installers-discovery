@@ -54,10 +54,8 @@ class Installer extends LibraryInstaller {
   public function supports($packageType) {
     // Discover the installer paths once.
     if (!isset( $this->installerLocations)) {
-      $this->installerLocations = false;
       if ($this->composer->getPackage()) {
-        $manager = $this->composer->getInstallationManager();
-        $project_root = $manager->getInstallPath($this->composer->getPackage());
+        $project_root = dirname(\Composer\Factory::getComposerFile());
         /*
          * Generate the installer mapping for the root project.
          *
@@ -68,7 +66,7 @@ class Installer extends LibraryInstaller {
         $this->installerLocations = $this->discoverInstallers($project_root);
       }
     }
-    return is_array($this->installerLocations) && array_key_exists($packageType, $this->installerLocations);
+    return isset($this->installerLocations) && array_key_exists($packageType, $this->installerLocations);
   }
 
   /**
