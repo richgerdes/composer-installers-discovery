@@ -5,9 +5,7 @@ namespace RoyGoldman\ComposerInstallersDiscovery;
 use Composer\Installer\LibraryInstaller;
 use Composer\Package\PackageInterface;
 use Composer\Package\Package;
-
-use JMS\Composer\DependencyAnalyzer;
-use JMS\Composer\Graph\PackageNode;
+use Composer\Repository\RepositoryInterface;
 
 /**
  * Implement custom installer to search dependencies for installer locations.
@@ -28,8 +26,10 @@ class Installer extends LibraryInstaller {
    */
   protected $packageInstallers;
 
+  protected $packageCache = [];
+
   /**
-   * {@inheirtdoc}
+   * {@inheritdoc}
    */
   public function getInstallPath(PackageInterface $package) {
     $type = $package->getType();
@@ -49,13 +49,13 @@ class Installer extends LibraryInstaller {
   }
 
   /**
-   * {@inheirtdoc}
+   * {@inheritdoc}
    */
   public function supports($packageType) {
+
     // Discover the installer paths once.
     if (!isset( $this->installerLocations)) {
       if ($this->composer->getPackage()) {
-        $project_root = dirname(\Composer\Factory::getComposerFile());
         /*
          * Generate the installer mapping for the root project.
          *
@@ -63,7 +63,7 @@ class Installer extends LibraryInstaller {
          * defined in the root project. If dependencies define any additional
          * paths, they will supplement the list the root's defined paths.
          */
-        $this->installerLocations = $this->discoverInstallers($project_root);
+        $this->installerLocations = $this->discoverInstallers();
       }
     }
     return isset($this->installerLocations) && array_key_exists($packageType, $this->installerLocations);
@@ -78,37 +78,37 @@ class Installer extends LibraryInstaller {
    * @return array
    *   Installer mappings keyed by type, with paths as values.
    */
-  protected function discoverInstallers($dir) {
-    $analyzer = new DependencyAnalyzer();
-    $dependencyGraph = $analyzer->analyze($dir);
-    $root = $dependencyGraph->getRootPackage();
-    return $this->discoverPackageInstallers($root);
+  protected function discoverInstallers() {
+    $localRepo = $this->composer->getRepositoryManager()->getLocalRepository();
+
+    $package = $this->composer->getPackage();
+
+    return $this->discoverPackageInstallers($package, $localRepo);
   }
 
   /**
    * Recursively discover available installer paths in installers.
    *
-   * @param \JMS\Composer\Graph\PackageNode\ $package
+   * @param \Composer\Package\PackageInterface $package
    *   Package to discover tree starting from.
+   * @param \Composer\Repository\RepositoryInterface $localRepo
+   *   Local Package repository.
    *
    * @return array
    *   Installer mappings keyed by type, with paths as values.
    */
-  protected function discoverPackageInstallers(PackageNode $package) {
-    static $package_cache = [];
-
-    // Only discover dependencies for a package once.
+  protected function discoverPackageInstallers(PackageInterface $package, RepositoryInterface $localRepo) {
     $package_name = $package->getName();
-    if (!isset($package_cache[$package_name])) {
+    if (!isset($this->package_cache[$package_name])) {
 
       // Initialize the package_cache entry to prevent loops.
-      $package_cache[$package_name] = [];
-      $installer_paths = &$package_cache[$package_name];
+      $this->package_cache[$package_name] = [];
+      $installer_paths = &$this->package_cache[$package_name];
 
       // Calculate the installer paths for this package.
-      $package_info = $package->getData();
-      if (isset($package_info['extra']) && isset($package_info['extra']['installer-paths'])) {
-        foreach ($package_info['extra']['installer-paths'] as $path => $values) {
+      $package_extra = $package->getExtra();
+      if (isset($package_extra) && isset($package_extra['installer-paths'])) {
+        foreach ($package_extra['installer-paths'] as $path => $values) {
           foreach ($values as $value) {
             if (strpos($value, 'type:') === 0) {
               $installer_paths[substr($value, 5)] = $path;
@@ -117,16 +117,26 @@ class Installer extends LibraryInstaller {
         }
       }
 
-      // For each dependency, supplement missing installer paths.
-      $edges = $package->getOutEdges();
-      foreach ($edges as $edge) {
-        $dependency_package = $edge->getDestPackage();
-        $dependency_installers = $this->discoverPackageInstallers($dependency_package);
-        $installer_paths += $dependency_installers;
+      $requires = $package->getRequires();
+      foreach ($requires as $requirement) {
+        $required_package = $localRepo->findPackage($requirement->getTarget(), $requirement->getConstraint());
+        if ($required_package) {
+          $installer_paths += $this->discoverPackageInstallers($required_package, $localRepo);
+        }
       }
     }
 
-    return $package_cache[$package_name];
+    return $this->package_cache[$package_name];
+  }
+
+  /**
+   * Reset discovered installers.
+   *
+   * When a new package is installed we need to reset the cached of discovered
+   * installers so they the mapping is rebuilt.
+   */
+  public function clearCache() {
+    $this->package_cache = [];
   }
 
 }
