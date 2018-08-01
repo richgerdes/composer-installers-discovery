@@ -3,6 +3,7 @@
 namespace RoyGoldman\ComposerInstallersDiscovery;
 
 use Composer\Installer\PackageEvent;
+use Composer\DependencyResolver\Operation\UpdateOperation;
 use RoyGoldman\ComposerInstallersDiscovery\Plugin;
 
 /**
@@ -34,7 +35,16 @@ class InstallEventHandler {
    *   Composer Package event for the currently installing package.
    */
   public function onPostPackageEvent(PackageEvent $event) {
-    $installed_package = $event->getOperation()->getPackage();
+
+    // Get the effected package from the Event.
+    $installed_package = NULL;
+    $operation = $event->getOperation();
+    if ($operation instanceof UpdateOperation) {
+      $installed_package = $operation->getTargetPackage();
+    }
+    else {
+      $installed_package = $operation->getPackage();
+    }
     $package_extra = $installed_package->getExtra();
 
     // If the effected package has installers, reset cached installers.

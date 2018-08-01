@@ -36,6 +36,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface {
     return [
       PackageEvents::POST_PACKAGE_INSTALL => 'onPostPackageEvent',
       PackageEvents::POST_PACKAGE_UPDATE => 'onPostPackageEvent',
+      PackageEvents::POST_PACKAGE_UNINSTALL => 'onPostPackageEvent',
     ];
   }
 
