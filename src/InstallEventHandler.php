@@ -35,7 +35,6 @@ class InstallEventHandler {
    *   Composer Package event for the currently installing package.
    */
   public function onPostPackageEvent(PackageEvent $event) {
-
     // Get the effected package from the Event.
     $installed_package = NULL;
     $operation = $event->getOperation();

@@ -5,7 +5,7 @@ namespace RoyGoldman\ComposerInstallersDiscovery;
 use Composer\Installer\LibraryInstaller;
 use Composer\Package\PackageInterface;
 use Composer\Package\Package;
-use Composer\Repository\RepositoryInterface;
+use Composer\Repository\RepositoryManager;
 
 /**
  * Implement custom installer to search dependencies for installer locations.
@@ -24,9 +24,7 @@ class Installer extends LibraryInstaller {
    *
    * @var array
    */
-  protected $packageInstallers;
-
-  protected $packageCache = [];
+  protected $packageInstallers = [];
 
   /**
    * {@inheritdoc}
@@ -35,7 +33,27 @@ class Installer extends LibraryInstaller {
     $type = $package->getType();
     // Load mapping from discovered installer locations.
     if (is_array($this->installerLocations) && array_key_exists($type, $this->installerLocations)) {
-      return $this->installerLocations[$type];
+      $name = $package->getPrettyName();
+      if (strpos($name, '/') !== false) {
+          list($vendor, $name) = explode('/', $name);
+      } else {
+          $vendor = '';
+      }
+
+      $path_vars = [
+        'type' => $type,
+        'name' => $name,
+        'vendor' => $vendor,
+      ];
+
+      $extra = $package->getExtra();
+      if (!empty($extra['installer-name'])) {
+          $path_vars['name'] = $extra['installer-name'];
+      }
+
+      $path = $this->installerLocations[$type];
+
+      return $this->templatePath($path, $path_vars);
     }
     // If there is no installer for the type, use the default vendor path.
     else {
@@ -49,9 +67,30 @@ class Installer extends LibraryInstaller {
   }
 
   /**
+   * Replace variables in a path
+   *
+   * @param  string $path
+   * @param  array  $path_vars
+   * @return string
+   */
+  protected function templatePath($path, array $path_vars = []) {
+    if (strpos($path, '{') !== false) {
+      extract($path_vars);
+      preg_match_all('@\{\$([A-Za-z0-9_]*)\}@i', $path, $matches);
+      if (!empty($matches[1])) {
+        foreach ($matches[1] as $var) {
+          $path = str_replace('{$' . $var . '}', $$var, $path);
+        }
+      }
+    }
+
+    return $path;
+  }
+
+  /**
    * {@inheritdoc}
    */
-  public function supports($packageType) {
+  public function supports($package_type) {
 
     // Discover the installer paths once.
     if (!isset( $this->installerLocations)) {
@@ -66,7 +105,7 @@ class Installer extends LibraryInstaller {
         $this->installerLocations = $this->discoverInstallers();
       }
     }
-    return isset($this->installerLocations) && array_key_exists($packageType, $this->installerLocations);
+    return isset($this->installerLocations) && array_key_exists($package_type, $this->installerLocations);
   }
 
   /**
@@ -79,11 +118,11 @@ class Installer extends LibraryInstaller {
    *   Installer mappings keyed by type, with paths as values.
    */
   protected function discoverInstallers() {
-    $localRepo = $this->composer->getRepositoryManager()->getLocalRepository();
+    $repo_manager = $this->composer->getRepositoryManager();
 
     $package = $this->composer->getPackage();
 
-    return $this->discoverPackageInstallers($package, $localRepo);
+    return $this->discoverPackageInstallers($package, $repo_manager);
   }
 
   /**
@@ -91,27 +130,28 @@ class Installer extends LibraryInstaller {
    *
    * @param \Composer\Package\PackageInterface $package
    *   Package to discover tree starting from.
-   * @param \Composer\Repository\RepositoryInterface $localRepo
+   * @param \Composer\Repository\RepositoryManager $repo_manager
    *   Local Package repository.
    *
    * @return array
    *   Installer mappings keyed by type, with paths as values.
    */
-  protected function discoverPackageInstallers(PackageInterface $package, RepositoryInterface $localRepo) {
+  protected function discoverPackageInstallers(PackageInterface $package, RepositoryManager $repo_manager) {
     $package_name = $package->getName();
-    if (!isset($this->package_cache[$package_name])) {
+    if (!isset($this->packageInstallers[$package_name])) {
 
-      // Initialize the package_cache entry to prevent loops.
-      $this->package_cache[$package_name] = [];
-      $installer_paths = &$this->package_cache[$package_name];
+      // Initialize the package cache entry to prevent loops.
+      $this->packageInstallers[$package_name] = [];
+      $installer_paths = &$this->packageInstallers[$package_name];
 
       // Calculate the installer paths for this package.
       $package_extra = $package->getExtra();
       if (isset($package_extra) && isset($package_extra['installer-paths'])) {
         foreach ($package_extra['installer-paths'] as $path => $values) {
           foreach ($values as $value) {
-            if (strpos($value, 'type:') === 0) {
-              $installer_paths[substr($value, 5)] = $path;
+            $type = explode(':', $value, 2);
+            if (count($type) >= 2 && $type[0] === 'type') {
+              $installer_paths[$type[1]] = $path;
             }
           }
         }
@@ -119,14 +159,14 @@ class Installer extends LibraryInstaller {
 
       $requires = $package->getRequires();
       foreach ($requires as $requirement) {
-        $required_package = $localRepo->findPackage($requirement->getTarget(), $requirement->getConstraint());
+        $required_package = $repo_manager->findPackage($requirement->getTarget(), $requirement->getConstraint());
         if ($required_package) {
-          $installer_paths += $this->discoverPackageInstallers($required_package, $localRepo);
+          $installer_paths += $this->discoverPackageInstallers($required_package, $repo_manager);
         }
       }
     }
 
-    return $this->package_cache[$package_name];
+    return $this->packageInstallers[$package_name];
   }
 
   /**
@@ -136,7 +176,8 @@ class Installer extends LibraryInstaller {
    * installers so they the mapping is rebuilt.
    */
   public function clearCache() {
-    $this->package_cache = [];
+    $this->packageInstallers = [];
+    $this->installerLocations = NULL;
   }
 
 }
