@@ -2,7 +2,7 @@
     "name": "roygoldman/composer-installers-discovery",
     "description": "A composer installers extension which permits dependencies to provide installer paths relative to the parent project.",
     "type": "composer-plugin",
-    "license": "MIT",
+    "license": "GPL-2.0-or-later",
     "authors": [
         {
             "name": "Rich Gerdes",
