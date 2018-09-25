@@ -31,28 +31,38 @@ class Installer extends LibraryInstaller {
    */
   public function getInstallPath(PackageInterface $package) {
     $type = $package->getType();
+    $full_name = $package->getPrettyName();
+    if (strpos($full_name, '/') !== false) {
+      list($vendor, $name) = explode('/', $full_name);
+    } else {
+      $name = $full_name;
+      $vendor = '';
+    }
+    $path_vars = [
+      'type' => $type,
+      'name' => $name,
+      'vendor' => $vendor,
+    ];
+    $extra = $package->getExtra();
+    if (!empty($extra['installer-name'])) {
+        $path_vars['name'] = $extra['installer-name'];
+    }
+
+    // Check for installer path in root package.
+    if ($this->composer->getPackage()) {
+      $root_extra = $this->composer->getPackage()->getExtra();
+      if (!empty($root_extra['installer-paths'])) {
+        $path = $this->mapCustomInstallPaths($root_extra['installer-paths'], $full_name, $type, $vendor);
+        if ($path !== false) {
+          // If project defines a path, install the package there.
+          return $this->templatePath($path, $path_vars);
+        }
+      }
+    }
+
     // Load mapping from discovered installer locations.
     if (is_array($this->installerLocations) && array_key_exists($type, $this->installerLocations)) {
-      $name = $package->getPrettyName();
-      if (strpos($name, '/') !== false) {
-          list($vendor, $name) = explode('/', $name);
-      } else {
-          $vendor = '';
-      }
-
-      $path_vars = [
-        'type' => $type,
-        'name' => $name,
-        'vendor' => $vendor,
-      ];
-
-      $extra = $package->getExtra();
-      if (!empty($extra['installer-name'])) {
-          $path_vars['name'] = $extra['installer-name'];
-      }
-
       $path = $this->installerLocations[$type];
-
       return $this->templatePath($path, $path_vars);
     }
     // If there is no installer for the type, use the default vendor path.
@@ -178,6 +188,47 @@ class Installer extends LibraryInstaller {
   public function clearCache() {
     $this->packageInstallers = [];
     $this->installerLocations = NULL;
+  }
+
+  /**
+   * Search through a passed paths array for a custom install path.
+   *
+   * @param array $paths
+   *   List of path templates, where keys are paths and values or package names.
+   * @param string $name
+   *   Package name, without vendor prefix.
+   * @param string $type
+   *   Package Type.
+   * @param string $vendor
+   *   Vendor name.
+   * @return string
+   *   Package install path if available, otherwise false.
+   */
+  protected function mapCustomInstallPaths(array $paths, $name, $type, $vendor = NULL) {
+    static $package_map = NULL;
+    if ($package_map === NULL) {
+      $package_map = [];
+      foreach ($paths as $path => $names) {
+        foreach ($names as $name) {
+          if (!isset($package_map[$name])) {
+            $package_map[$name] = $path;
+          }
+        }
+      }
+    }
+
+    $keys = [
+      $name,
+      'type:' . $type,
+      'vendor:' . $vendor,
+    ];
+    foreach ($keys as $key) {
+      if (isset($package_map[$key])) {
+        return $package_map[$key];
+      }
+    }
+
+    return false;
   }
 
 }
