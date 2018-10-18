@@ -3,6 +3,7 @@
 namespace RoyGoldman\ComposerInstallersDiscovery;
 
 use Composer\Installer\LibraryInstaller;
+use Composer\Package\Link;
 use Composer\Package\PackageInterface;
 use Composer\Package\Package;
 use Composer\Repository\RepositoryManager;
@@ -169,6 +170,9 @@ class Installer extends LibraryInstaller {
 
       $requires = $package->getRequires();
       foreach ($requires as $requirement) {
+        if (static::isSystemRequirement($requirement)) {
+          continue;
+        }
         $required_package = $repo_manager->findPackage($requirement->getTarget(), $requirement->getConstraint());
         if ($required_package) {
           $installer_paths += $this->discoverPackageInstallers($required_package, $repo_manager);
@@ -177,6 +181,27 @@ class Installer extends LibraryInstaller {
     }
 
     return $this->packageInstallers[$package_name];
+  }
+
+  /**
+   * Checks if the required package doesn't have a vendor.
+   *
+   * Packages without vendor definitions should only ever be php or a php
+   * extension.
+   *
+   * @param \Composer\Package\Link $requirement
+   *   Required package reference.
+   *
+   * @return bool
+   *   True if the package is a php or an extension. False otherwise.
+   */
+  public static function isSystemRequirement(Link $requirement) {
+    $package_name = $requirement->getTarget();
+    if (strpos($package_name, '/') === FALSE) {
+      return TRUE;
+    }
+
+    return FALSE;
   }
 
   /**
